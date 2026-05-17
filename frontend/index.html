@@ -1,0 +1,1237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Quant Terminal v5</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked@11.2.0/marked.min.js"></script>
+    <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #050505;
+            --surface: #0a0a0a;
+            --surface2: #111111;
+            --border: #1a1a1a;
+            --text: #e5e5e5;
+            --text-dim: #737373;
+            --green: #22c55e;
+            --red: #ef4444;
+            --blue: #3b82f6;
+            --purple: #a855f7;
+            --yellow: #eab308;
+            --cyan: #06b6d4;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            overflow: hidden;
+            height: 100vh;
+        }
+        .mono { font-family: 'JetBrains Mono', monospace; }
+        ::-webkit-scrollbar { width: 4px; height: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .nav-active { background: #1a1a1a; color: #fff; border-left: 2px solid var(--blue); }
+        #toast-container { position: fixed; top: 1rem; right: 1rem; z-index: 9999; display: flex; flex-direction: column; gap: 0.5rem; }
+        .toast {
+            padding: 0.75rem 1rem;
+            border-radius: 0.5rem;
+            font-size: 0.75rem;
+            font-weight: 500;
+            animation: slideIn 0.2s ease-out;
+            max-width: 320px;
+        }
+        .toast-success { background: #052e16; border: 1px solid #166534; color: #4ade80; }
+        .toast-error { background: #450a0a; border: 1px solid #991b1b; color: #f87171; }
+        .toast-info { background: #0c1a3a; border: 1px solid #1e3a5f; color: #60a5fa; }
+        @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        #chart-container { width: 100%; height: 100%; }
+        .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 0.5rem; padding: 1rem; }
+        .stat-card2 { background: var(--surface2); border: 1px solid var(--border); border-radius: 0.5rem; padding: 0.75rem; }
+        .heatmap-cell { transition: all 0.3s; }
+        .heatmap-cell:hover { transform: scale(1.05); }
+        .pulse { animation: pulse 2s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .gradient-text { background: linear-gradient(135deg, var(--blue), var(--purple)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    </style>
+</head>
+<body>
+
+<div id="toast-container"></div>
+
+<div class="flex h-screen">
+    <!-- Sidebar -->
+    <aside class="w-52 bg-[#080808] border-r border-[#1a1a1a] flex flex-col flex-shrink-0">
+        <div class="p-4 border-b border-[#1a1a1a]">
+            <h1 class="text-sm font-semibold tracking-tight gradient-text">AI Quant Terminal</h1>
+            <p class="text-[10px] text-neutral-600 mt-0.5">v5.0 · Powered by Ollama</p>
+        </div>
+        <nav class="p-2 space-y-0.5 flex-1">
+            <button class="nav-link nav-active w-full text-left px-3 py-2 rounded text-xs font-medium transition-colors" data-tab="dashboard">Dashboard</button>
+            <button class="nav-link w-full text-left px-3 py-2 rounded text-xs font-medium text-neutral-500 hover:text-white transition-colors" data-tab="intelligence">Intelligence</button>
+            <button class="nav-link w-full text-left px-3 py-2 rounded text-xs font-medium text-neutral-500 hover:text-white transition-colors" data-tab="analysis">Analysis</button>
+            <button class="nav-link w-full text-left px-3 py-2 rounded text-xs font-medium text-neutral-500 hover:text-white transition-colors" data-tab="trading">Trading</button>
+        </nav>
+        <div class="p-3 border-t border-[#1a1a1a] space-y-2">
+            <div class="flex items-center justify-between">
+                <span class="text-[10px] text-neutral-600 uppercase tracking-wide">Ollama</span>
+                <div id="ollama-pulse" class="w-1.5 h-1.5 rounded-full bg-red-500"></div>
+            </div>
+            <select id="model-select" class="w-full text-[10px] mono bg-[#0a0a0a] border border-neutral-800 rounded px-2 py-1.5 text-neutral-400 focus:border-blue-500 outline-none">
+                <option>Loading...</option>
+            </select>
+            <div class="flex items-center justify-between">
+                <span class="text-[10px] text-neutral-600 uppercase">Session</span>
+                <span id="session-badge" class="text-[10px] mono px-1.5 py-0.5 rounded bg-neutral-800 text-neutral-400">---</span>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="flex-1 flex flex-col overflow-hidden">
+        <!-- Top Bar -->
+        <header class="h-12 border-b border-[#1a1a1a] flex items-center justify-between px-4 bg-[#080808] flex-shrink-0">
+            <div class="flex items-center gap-4">
+                <div class="flex items-center gap-2">
+                    <div id="conn-dot" class="w-1.5 h-1.5 rounded-full bg-red-500"></div>
+                    <span id="conn-text" class="text-[10px] text-neutral-600 uppercase tracking-wide">Disconnected</span>
+                </div>
+                <div class="h-4 w-px bg-neutral-800"></div>
+                <div id="symbol-display" class="text-xs mono font-medium">---</div>
+                <div id="tf-display" class="text-[10px] mono text-neutral-500">---</div>
+            </div>
+            <div class="flex items-center gap-4">
+                <div class="flex items-center gap-2">
+                    <span class="text-[10px] text-neutral-600 uppercase">Auto-Trade</span>
+                    <button id="master-trade-toggle" class="w-8 h-4 rounded-full bg-neutral-700 relative transition-colors">
+                        <span class="absolute left-0.5 top-0.5 w-3 h-3 rounded-full bg-white transition-all"></span>
+                    </button>
+                </div>
+                <div class="h-4 w-px bg-neutral-800"></div>
+                <div class="text-right">
+                    <p class="text-[10px] text-neutral-600 uppercase">Streams</p>
+                    <p id="stream-count" class="text-xs mono font-medium">0</p>
+                </div>
+            </div>
+        </header>
+
+        <!-- Content Area -->
+        <div class="flex-1 overflow-y-auto p-4">
+
+            <!-- DASHBOARD TAB -->
+            <div id="tab-dashboard" class="tab-content active space-y-4">
+                <!-- Stream Tabs -->
+                <div class="flex gap-1 overflow-x-auto pb-1" id="stream-tabs"></div>
+
+                <!-- Main Grid -->
+                <div class="grid grid-cols-12 gap-3">
+                    <!-- Chart -->
+                    <div class="col-span-9 stat-card">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-4">
+                                <div>
+                                    <h2 id="active-symbol" class="text-base font-semibold">---</h2>
+                                    <span id="active-tf" class="text-[10px] mono text-neutral-500">---</span>
+                                </div>
+                                <div class="flex gap-4">
+                                    <div class="text-right">
+                                        <p class="text-[9px] text-neutral-600 uppercase">Bid</p>
+                                        <p id="val-bid" class="text-sm mono font-medium">--</p>
+                                    </div>
+                                    <div class="text-right">
+                                        <p class="text-[9px] text-neutral-600 uppercase">Ask</p>
+                                        <p id="val-ask" class="text-sm mono font-medium">--</p>
+                                    </div>
+                                    <div class="text-right">
+                                        <p class="text-[9px] text-neutral-600 uppercase">Spread</p>
+                                        <p id="val-spread" class="text-sm mono font-medium">--</p>
+                                    </div>
+                                    <div class="text-right">
+                                        <p class="text-[9px] text-neutral-600 uppercase">Change</p>
+                                        <p id="val-change" class="text-sm mono font-medium">--</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="chart-container" class="h-72 rounded"></div>
+                    </div>
+
+                    <!-- Right Panel -->
+                    <div class="col-span-3 space-y-3">
+                        <!-- Market Regime -->
+                        <div class="stat-card2">
+                            <h3 class="text-[10px] font-medium mb-2 text-neutral-400 uppercase">Market Regime</h3>
+                            <div class="space-y-2">
+                                <div class="flex justify-between">
+                                    <span class="text-[10px] text-neutral-600">Trend</span>
+                                    <span id="regime-trend" class="text-[10px] mono font-medium">---</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-[10px] text-neutral-600">Volatility</span>
+                                    <span id="regime-vol" class="text-[10px] mono font-medium">---</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-[10px] text-neutral-600">Volume</span>
+                                    <span id="regime-vol-trend" class="text-[10px] mono font-medium">---</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Key Indicators -->
+                        <div class="stat-card2">
+                            <h3 class="text-[10px] font-medium mb-2 text-neutral-400 uppercase">Key Indicators</h3>
+                            <div class="grid grid-cols-2 gap-2">
+                                <div><p class="text-[9px] text-neutral-600">RSI</p><p id="val-rsi" class="text-xs mono font-medium">--</p></div>
+                                <div><p class="text-[9px] text-neutral-600">MACD</p><p id="val-macd" class="text-xs mono font-medium">--</p></div>
+                                <div><p class="text-[9px] text-neutral-600">ATR</p><p id="val-atr" class="text-xs mono font-medium">--</p></div>
+                                <div><p class="text-[9px] text-neutral-600">ADX</p><p id="val-adx" class="text-xs mono font-medium">--</p></div>
+                                <div><p class="text-[9px] text-neutral-600">Stoch</p><p id="val-stoch" class="text-xs mono font-medium">--</p></div>
+                                <div><p class="text-[9px] text-neutral-600">CCI</p><p id="val-cci" class="text-xs mono font-medium">--</p></div>
+                                <div><p class="text-[9px] text-neutral-600">MFI</p><p id="val-mfi" class="text-xs mono font-medium">--</p></div>
+                                <div><p class="text-[9px] text-neutral-600">BB Upper</p><p id="val-bb-up" class="text-xs mono font-medium">--</p></div>
+                                <div><p class="text-[9px] text-neutral-600">BB Lower</p><p id="val-bb-low" class="text-xs mono font-medium">--</p></div>
+                                <div><p class="text-[9px] text-neutral-600">EMA 50</p><p id="val-ema50" class="text-xs mono font-medium">--</p></div>
+                                <div><p class="text-[9px] text-neutral-600">EMA 200</p><p id="val-ema200" class="text-xs mono font-medium">--</p></div>
+                                <div><p class="text-[9px] text-neutral-600">Williams %R</p><p id="val-wr" class="text-xs mono font-medium">--</p></div>
+                                <div><p class="text-[9px] text-neutral-600">SAR</p><p id="val-sar" class="text-xs mono font-medium">--</p></div>
+                            </div>
+                        </div>
+
+                        <!-- Portfolio -->
+                        <div class="stat-card2">
+                            <h3 class="text-[10px] font-medium mb-2 text-neutral-400 uppercase">Account</h3>
+                            <div class="space-y-1.5">
+                                <div class="flex justify-between">
+                                    <span class="text-[10px] text-neutral-600">Balance</span>
+                                    <span id="acct-balance" class="text-xs mono font-semibold">$0.00</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-[10px] text-neutral-600">Equity</span>
+                                    <span id="port-equity" class="text-xs mono font-semibold">$0.00</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-[10px] text-neutral-600">Floating P/L</span>
+                                    <span id="port-pl" class="text-xs mono font-semibold">$0.00</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-[10px] text-neutral-600">Free Margin</span>
+                                    <span id="acct-free-margin" class="text-xs mono font-semibold">$0.00</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-[10px] text-neutral-600">Margin Level</span>
+                                    <span id="acct-margin-level" class="text-xs mono font-semibold">--</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-[10px] text-neutral-600">Positions</span>
+                                    <span id="acct-positions" class="text-xs mono font-semibold">0</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-[10px] text-neutral-600">Win Rate</span>
+                                    <span id="port-winrate" class="text-xs mono font-semibold">0%</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Bottom Grid -->
+                <div class="grid grid-cols-12 gap-3">
+                    <!-- MTF Heatmap -->
+                    <div class="col-span-4 stat-card">
+                        <h3 class="text-[10px] font-medium mb-2 text-neutral-400 uppercase">Multi-Timeframe Heatmap</h3>
+                        <div id="mtf-heatmap" class="space-y-1"></div>
+                    </div>
+
+                    <!-- Correlation Matrix -->
+                    <div class="col-span-3 stat-card">
+                        <h3 class="text-[10px] font-medium mb-2 text-neutral-400 uppercase">Correlation</h3>
+                        <div id="correlation-matrix" class="space-y-1"></div>
+                    </div>
+
+                    <!-- Patterns -->
+                    <div class="col-span-2 stat-card">
+                        <h3 class="text-[10px] font-medium mb-2 text-neutral-400 uppercase">Patterns</h3>
+                        <div id="pattern-display" class="space-y-1"></div>
+                    </div>
+
+                    <!-- Economic Calendar -->
+                    <div class="col-span-3 stat-card">
+                        <h3 class="text-[10px] font-medium mb-2 text-neutral-400 uppercase">Economic Calendar</h3>
+                        <div id="calendar-display" class="space-y-1 max-h-32 overflow-y-auto"></div>
+                    </div>
+                </div>
+
+                <!-- Open Trades -->
+                <div class="stat-card">
+                    <h3 class="text-[10px] font-medium mb-2 text-neutral-400 uppercase">Open Positions</h3>
+                    <div id="open-trades-mini" class="space-y-1"></div>
+                </div>
+            </div>
+
+            <!-- INTELLIGENCE TAB -->
+            <div id="tab-intelligence" class="tab-content space-y-4">
+                <div class="grid grid-cols-12 gap-3">
+                    <!-- Volume Profile -->
+                    <div class="col-span-4 stat-card">
+                        <h3 class="text-[10px] font-medium mb-2 text-neutral-400 uppercase">Volume Profile</h3>
+                        <div id="volume-profile-chart" class="h-48"></div>
+                        <div class="mt-2 grid grid-cols-3 gap-2 text-[10px]">
+                            <div><span class="text-neutral-600">POC</span><p id="vp-poc" class="mono">--</p></div>
+                            <div><span class="text-neutral-600">VAH</span><p id="vp-vah" class="mono">--</p></div>
+                            <div><span class="text-neutral-600">VAL</span><p id="vp-val" class="mono">--</p></div>
+                        </div>
+                    </div>
+
+                    <!-- Support/Resistance -->
+                    <div class="col-span-4 stat-card">
+                        <h3 class="text-[10px] font-medium mb-2 text-neutral-400 uppercase">Support & Resistance</h3>
+                        <div class="space-y-2">
+                            <div>
+                                <p class="text-[9px] text-neutral-600 mb-1">Resistance</p>
+                                <div id="resistance-levels" class="space-y-1"></div>
+                            </div>
+                            <div class="border-t border-neutral-800 pt-2">
+                                <p class="text-[9px] text-neutral-600 mb-1">Support</p>
+                                <div id="support-levels" class="space-y-1"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Fibonacci & Pivots -->
+                    <div class="col-span-4 stat-card">
+                        <h3 class="text-[10px] font-medium mb-2 text-neutral-400 uppercase">Fibonacci & Pivots</h3>
+                        <div class="space-y-2">
+                            <div>
+                                <p class="text-[9px] text-neutral-600 mb-1">Fibonacci Levels</p>
+                                <div id="fib-levels" class="grid grid-cols-2 gap-1 text-[10px] mono"></div>
+                            </div>
+                            <div class="border-t border-neutral-800 pt-2">
+                                <p class="text-[9px] text-neutral-600 mb-1">Pivot Points</p>
+                                <div id="pivot-levels" class="grid grid-cols-2 gap-1 text-[10px] mono"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Advanced Metrics -->
+                <div class="grid grid-cols-12 gap-3">
+                    <div class="col-span-6 stat-card">
+                        <h3 class="text-[10px] font-medium mb-2 text-neutral-400 uppercase">Advanced Metrics</h3>
+                        <div class="grid grid-cols-3 gap-3">
+                            <div><p class="text-[9px] text-neutral-600">Annual Vol</p><p id="adv-ann-vol" class="text-xs mono font-medium">--</p></div>
+                            <div><p class="text-[9px] text-neutral-600">Daily Vol</p><p id="adv-daily-vol" class="text-xs mono font-medium">--</p></div>
+                            <div><p class="text-[9px] text-neutral-600">ATR Ratio</p><p id="adv-atr-ratio" class="text-xs mono font-medium">--</p></div>
+                            <div><p class="text-[9px] text-neutral-600">RSI Divergence</p><p id="adv-rsi-div" class="text-xs mono font-medium">--</p></div>
+                            <div><p class="text-[9px] text-neutral-600">Volume Trend</p><p id="adv-vol-trend" class="text-xs mono font-medium">--</p></div>
+                            <div><p class="text-[9px] text-neutral-600">Volume Ratio</p><p id="adv-vol-ratio" class="text-xs mono font-medium">--</p></div>
+                        </div>
+                    </div>
+                    <div class="col-span-6 stat-card">
+                        <h3 class="text-[10px] font-medium mb-2 text-neutral-400 uppercase">Symbol Information</h3>
+                        <div class="grid grid-cols-4 gap-3 text-[10px]">
+                            <div><p class="text-neutral-600">Digits</p><p id="sym-digits" class="mono">--</p></div>
+                            <div><p class="text-neutral-600">Point</p><p id="sym-point" class="mono">--</p></div>
+                            <div><p class="text-neutral-600">Contract</p><p id="sym-contract" class="mono">--</p></div>
+                            <div><p class="text-neutral-600">Tick Value</p><p id="sym-tick-val" class="mono">--</p></div>
+                            <div><p class="text-neutral-600">Min Lot</p><p id="sym-min-lot" class="mono">--</p></div>
+                            <div><p class="text-neutral-600">Max Lot</p><p id="sym-max-lot" class="mono">--</p></div>
+                            <div><p class="text-neutral-600">Swap Long</p><p id="sym-swap-long" class="mono">--</p></div>
+                            <div><p class="text-neutral-600">Swap Short</p><p id="sym-swap-short" class="mono">--</p></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- MTF Detail -->
+                <div class="stat-card">
+                    <h3 class="text-[10px] font-medium mb-2 text-neutral-400 uppercase">Multi-Timeframe Analysis</h3>
+                    <div id="mtf-detail" class="overflow-x-auto">
+                        <table class="w-full text-[10px] mono">
+                            <thead class="text-neutral-600 border-b border-neutral-800">
+                                <tr>
+                                    <th class="pb-1 text-left font-medium">TF</th>
+                                    <th class="pb-1 text-left font-medium">Close</th>
+                                    <th class="pb-1 text-left font-medium">Change %</th>
+                                    <th class="pb-1 text-left font-medium">RSI</th>
+                                    <th class="pb-1 text-left font-medium">SMA 20</th>
+                                    <th class="pb-1 text-left font-medium">ATR</th>
+                                    <th class="pb-1 text-left font-medium">MACD</th>
+                                    <th class="pb-1 text-left font-medium">Trend</th>
+                                </tr>
+                            </thead>
+                            <tbody id="mtf-detail-body" class="divide-y divide-neutral-800"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ANALYSIS TAB -->
+            <div id="tab-analysis" class="tab-content space-y-4">
+                <div class="grid grid-cols-12 gap-3">
+                    <div class="col-span-8 stat-card">
+                        <div class="flex items-center justify-between mb-3">
+                            <h3 class="text-[10px] font-medium text-neutral-400 uppercase">AI Analysis Output</h3>
+                            <button id="analyze-btn" class="text-[10px] px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 transition-colors font-medium">Run Analysis</button>
+                        </div>
+                        <div id="ai-output" class="text-xs text-neutral-400 leading-relaxed max-h-[500px] overflow-y-auto prose prose-invert"></div>
+                    </div>
+                    <div class="col-span-4 space-y-3">
+                        <div class="stat-card">
+                            <h3 class="text-[10px] font-medium mb-2 text-neutral-400 uppercase">Agent Consensus</h3>
+                            <div id="agent-votes" class="space-y-2"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <h3 class="text-[10px] font-medium mb-2 text-neutral-400 uppercase">Analysis History</h3>
+                    <div id="analysis-chat" class="space-y-2 max-h-[300px] overflow-y-auto"></div>
+                </div>
+            </div>
+
+            <!-- TRADING TAB -->
+            <div id="tab-trading" class="tab-content space-y-4">
+                <div class="grid grid-cols-12 gap-3">
+                    <div class="col-span-4 stat-card">
+                        <h3 class="text-[10px] font-medium mb-3 text-neutral-400 uppercase">Manual Order</h3>
+                        <div class="space-y-2">
+                            <div>
+                                <label class="text-[9px] text-neutral-600 block mb-1">Symbol</label>
+                                <select id="trade-symbol" class="w-full bg-[#0a0a0a] border border-neutral-800 rounded px-2 py-1.5 text-xs mono text-white focus:border-blue-500 outline-none"></select>
+                            </div>
+                            <div class="grid grid-cols-2 gap-2">
+                                <div>
+                                    <label class="text-[9px] text-neutral-600 block mb-1">Direction</label>
+                                    <select id="trade-direction" class="w-full bg-[#0a0a0a] border border-neutral-800 rounded px-2 py-1.5 text-xs mono text-white focus:border-blue-500 outline-none">
+                                        <option value="LONG">LONG</option>
+                                        <option value="SHORT">SHORT</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="text-[9px] text-neutral-600 block mb-1">Volume</label>
+                                    <input id="trade-qty" type="number" step="0.01" value="0.10" class="w-full bg-[#0a0a0a] border border-neutral-800 rounded px-2 py-1.5 text-xs mono text-white focus:border-blue-500 outline-none">
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-2">
+                                <div>
+                                    <label class="text-[9px] text-neutral-600 block mb-1">Stop Loss</label>
+                                    <input id="trade-sl" type="number" step="0.0001" placeholder="Optional" class="w-full bg-[#0a0a0a] border border-neutral-800 rounded px-2 py-1.5 text-xs mono text-white focus:border-blue-500 outline-none">
+                                </div>
+                                <div>
+                                    <label class="text-[9px] text-neutral-600 block mb-1">Take Profit</label>
+                                    <input id="trade-tp" type="number" step="0.0001" placeholder="Optional" class="w-full bg-[#0a0a0a] border border-neutral-800 rounded px-2 py-1.5 text-xs mono text-white focus:border-blue-500 outline-none">
+                                </div>
+                            </div>
+                            <button id="btn-open-trade" class="w-full py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-xs font-medium transition-colors">Execute Order</button>
+                        </div>
+                    </div>
+                    <div class="col-span-8 stat-card">
+                        <h3 class="text-[10px] font-medium mb-2 text-neutral-400 uppercase">Active Positions</h3>
+                        <div id="open-trades-list" class="space-y-1"></div>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <h3 class="text-[10px] font-medium mb-2 text-neutral-400 uppercase">Trade History</h3>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-[10px] mono">
+                            <thead class="text-neutral-600 border-b border-neutral-800">
+                                <tr>
+                                    <th class="pb-1 text-left font-medium">Time</th>
+                                    <th class="pb-1 text-left font-medium">Symbol</th>
+                                    <th class="pb-1 text-left font-medium">Direction</th>
+                                    <th class="pb-1 text-left font-medium">Strategy</th>
+                                    <th class="pb-1 text-right font-medium">P/L</th>
+                                </tr>
+                            </thead>
+                            <tbody id="trade-history-body" class="divide-y divide-neutral-800"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </main>
+</div>
+
+<script>
+    const API = (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost' || window.location.protocol === 'file:') ? 'http://127.0.0.1:8000' : window.location.origin;
+    let chart, candleSeries, volumeSeries;
+    let streams = {}, activeStreamId = null;
+    let priceLines = [];
+    let extendedData = {};
+
+    function showToast(message, type = 'info') {
+        const container = document.getElementById('toast-container');
+        const toast = document.createElement('div');
+        toast.className = `toast toast-${type}`;
+        toast.textContent = message;
+        container.appendChild(toast);
+        setTimeout(() => {
+            toast.style.transition = 'opacity 0.3s';
+            requestAnimationFrame(() => { toast.style.opacity = '0'; });
+            setTimeout(() => toast.remove(), 300);
+        }, 4000);
+    }
+
+    document.querySelectorAll('.nav-link').forEach(btn => {
+        btn.onclick = () => {
+            document.querySelectorAll('.nav-link').forEach(b => { b.classList.remove('nav-active'); b.classList.add('text-neutral-500'); });
+            btn.classList.add('nav-active');
+            btn.classList.remove('text-neutral-500');
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            const tabEl = document.getElementById('tab-' + btn.dataset.tab);
+            if (tabEl) tabEl.classList.add('active');
+            if (btn.dataset.tab === 'dashboard' && chart) {
+                setTimeout(() => chart.resize(document.getElementById('chart-container').clientWidth, document.getElementById('chart-container').clientHeight), 50);
+            }
+        };
+    });
+
+    function initChart() {
+        if (typeof LightweightCharts === 'undefined') {
+            showToast('Chart library failed to load', 'error');
+            return;
+        }
+        const c = document.getElementById('chart-container');
+        chart = LightweightCharts.createChart(c, {
+            layout: { background: { color: 'transparent' }, textColor: '#737373', fontSize: 10, fontFamily: 'JetBrains Mono' },
+            grid: { vertLines: { color: 'rgba(255,255,255,0.03)' }, horzLines: { color: 'rgba(255,255,255,0.03)' } },
+            timeScale: { borderColor: '#1a1a1a', timeVisible: true },
+            rightPriceScale: { borderColor: '#1a1a1a' },
+            crosshair: { mode: LightweightCharts.CrosshairMode.Normal, vertLine: { color: '#3b82f6', width: 1, style: 2 }, horzLine: { color: '#3b82f6', width: 1, style: 2 } }
+        });
+        candleSeries = chart.addCandlestickSeries({ upColor: '#22c55e', downColor: '#ef4444', borderVisible: false, wickUpColor: '#22c55e', wickDownColor: '#ef4444' });
+        volumeSeries = chart.addHistogramSeries({ priceFormat: { type: 'volume' }, priceScaleId: 'volume', color: 'rgba(59, 130, 246, 0.1)' });
+        chart.priceScale('volume').applyOptions({ scaleMargins: { top: 0.85, bottom: 0 } });
+    }
+
+    function updateChartLevels(entryLow, entryHigh, stopLoss, takeProfit) {
+        if (!candleSeries) return;
+        priceLines.forEach(line => { try { candleSeries.removePriceLine(line); } catch(e) {} });
+        priceLines = [];
+        if (entryLow && entryLow > 0) {
+            const entryVal = entryHigh ? (entryLow + entryHigh) / 2 : entryLow;
+            priceLines.push(candleSeries.createPriceLine({ price: entryVal, color: '#3b82f6', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: 'ENTRY' }));
+        }
+        if (stopLoss && stopLoss > 0) {
+            priceLines.push(candleSeries.createPriceLine({ price: stopLoss, color: '#ef4444', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: 'SL' }));
+        }
+        if (takeProfit && takeProfit > 0) {
+            priceLines.push(candleSeries.createPriceLine({ price: takeProfit, color: '#22c55e', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: 'TP' }));
+        }
+    }
+
+    function connectWS() {
+        const wsHost = (window.location.hostname === '' || window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost' || window.location.protocol === 'file:') ? '127.0.0.1:8000' : window.location.host;
+        const ws = new WebSocket(`${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${wsHost}/ws`);
+        ws.onopen = () => {
+            document.getElementById('conn-dot').className = 'w-1.5 h-1.5 rounded-full bg-green-500';
+            document.getElementById('conn-text').textContent = 'Connected';
+            document.getElementById('conn-text').className = 'text-[10px] text-green-500 uppercase tracking-wide';
+        };
+        ws.onmessage = ev => {
+            try {
+                const msg = JSON.parse(ev.data);
+                if (msg.type === 'market_data') handleMarketData(msg.data, msg.stream_id);
+                if (msg.type === 'analysis_complete') renderAnalysis(msg);
+                if (msg.type === 'extended_data') handleExtendedData(msg);
+            } catch (e) { console.warn('Invalid WS message:', e); }
+        };
+        ws.onclose = () => {
+            document.getElementById('conn-dot').className = 'w-1.5 h-1.5 rounded-full bg-red-500';
+            document.getElementById('conn-text').textContent = 'Disconnected';
+            document.getElementById('conn-text').className = 'text-[10px] text-red-500 uppercase tracking-wide';
+            setTimeout(connectWS, 2000);
+        };
+    }
+
+    function handleMarketData(d, id) {
+        if (!d) return;
+        const isNew = !streams[id];
+        streams[id] = d;
+        if (!activeStreamId || isNew) switchStream(id);
+        else if (id === activeStreamId) {
+            updateActiveView(d);
+            updateChartRealtime(d);
+        }
+        updateStreamTabs();
+    }
+
+    function updateChartRealtime(d) {
+        if (!candleSeries || !d.recent_candles || d.recent_candles.length === 0) return;
+        const candles = d.recent_candles;
+        const last = candles[candles.length - 1];
+        if (!last || !last.time) return;
+        try {
+            candleSeries.update({
+                time: parseInt(last.time, 10),
+                open: parseFloat(last.open),
+                high: parseFloat(last.high),
+                low: parseFloat(last.low),
+                close: parseFloat(last.close)
+            });
+            if (volumeSeries) {
+                volumeSeries.update({
+                    time: parseInt(last.time, 10),
+                    value: parseFloat(last.volume || 0),
+                    color: parseFloat(last.close) >= parseFloat(last.open) ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)'
+                });
+            }
+        } catch(e) { /* ignore update errors for out-of-order data */ }
+    }
+
+    function handleExtendedData(msg) {
+        extendedData[msg.stream_id] = msg;
+        if (msg.stream_id === activeStreamId) {
+            renderMTFHeatmap(msg.mtf);
+            renderCorrelation(msg.correlation);
+            renderPatterns(msg.patterns);
+            renderCalendar(msg.calendar);
+            renderVolumeProfile(msg.volume_profile);
+            renderStructure(msg.structure);
+            renderAdvancedMetrics(msg.advanced_metrics);
+            renderSymbolInfo(msg.symbol_info);
+            renderSession(msg.session);
+        }
+    }
+
+    function switchStream(id) {
+        activeStreamId = id;
+        const d = streams[id];
+        if (!d) return;
+        document.getElementById('active-symbol').textContent = d.symbol || '---';
+        document.getElementById('active-tf').textContent = (d.timeframe || '').replace('PERIOD_', '') || '---';
+        document.getElementById('symbol-display').textContent = d.symbol || '---';
+        document.getElementById('tf-display').textContent = (d.timeframe || '').replace('PERIOD_', '') || '---';
+        const data = (d.recent_candles || []).map(c => ({
+            time: c.time ? parseInt(c.time, 10) : 0,
+            open: parseFloat(c.open), high: parseFloat(c.high), low: parseFloat(c.low), close: parseFloat(c.close)
+        })).filter(c => c.time > 0).sort((a, b) => a.time - b.time);
+        if (data.length > 0) {
+            candleSeries.setData(data);
+            if (volumeSeries) {
+                const volData = (d.recent_candles || []).map(c => ({
+                    time: c.time ? parseInt(c.time, 10) : 0,
+                    value: parseFloat(c.volume || 0),
+                    color: parseFloat(c.close) >= parseFloat(c.open) ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)'
+                })).filter(c => c.time > 0).sort((a, b) => a.time - b.time);
+                volumeSeries.setData(volData);
+            }
+        }
+        updateActiveView(d);
+        updateStreamTabs();
+        
+        const ext = extendedData[id];
+        if (ext) {
+            renderMTFHeatmap(ext.mtf);
+            renderCorrelation(ext.correlation);
+            renderPatterns(ext.patterns);
+            renderCalendar(ext.calendar);
+            renderVolumeProfile(ext.volume_profile);
+            renderStructure(ext.structure);
+            renderAdvancedMetrics(ext.advanced_metrics);
+            renderSymbolInfo(ext.symbol_info);
+            renderSession(ext.session);
+        }
+    }
+
+    let _pricePrecision = 5;
+
+    function updateActiveView(d) {
+        if (!d) return;
+        const ind = d.indicators || {};
+        const dp = _pricePrecision;
+        const fmt = (v, digits = dp) => (v != null && v !== 'null' ? parseFloat(v).toFixed(digits) : '--');
+
+        document.getElementById('val-bid').textContent = d.bid ? d.bid.toFixed(dp) : '--';
+        document.getElementById('val-ask').textContent = d.ask ? d.ask.toFixed(dp) : '--';
+        document.getElementById('val-spread').textContent = d.spread != null ? d.spread.toFixed(1) : '--';
+        
+        const changeEl = document.getElementById('val-change');
+        if (d.change != null) {
+            const changeVal = parseFloat(d.change);
+            changeEl.textContent = (changeVal >= 0 ? '+' : '') + changeVal.toFixed(dp);
+            changeEl.className = `text-sm mono font-medium ${changeVal >= 0 ? 'text-green-400' : 'text-red-400'}`;
+        }
+
+        document.getElementById('val-rsi').textContent = fmt(ind.rsi_14, 1);
+        const rsiEl = document.getElementById('val-rsi');
+        const rsiVal = parseFloat(ind.rsi_14);
+        rsiEl.className = `text-xs mono font-medium ${rsiVal > 70 ? 'text-red-400' : rsiVal < 30 ? 'text-green-400' : ''}`;
+
+        document.getElementById('val-macd').textContent = fmt(ind.macd_main);
+        document.getElementById('val-atr').textContent = fmt(ind.atr_14);
+        document.getElementById('val-adx').textContent = fmt(ind.adx, 1);
+        document.getElementById('val-stoch').textContent = fmt(ind.stoch_k, 1);
+        document.getElementById('val-cci').textContent = fmt(ind.cci_14, 1);
+        document.getElementById('val-mfi').textContent = fmt(ind.mfi_14, 1);
+        document.getElementById('val-bb-up').textContent = fmt(ind.bb_up);
+        document.getElementById('val-bb-low').textContent = fmt(ind.bb_low);
+        document.getElementById('val-ema50').textContent = fmt(ind.ema_50);
+        document.getElementById('val-ema200').textContent = fmt(ind.ema_200);
+        document.getElementById('val-wr').textContent = fmt(ind.williams_r, 1);
+        document.getElementById('val-sar').textContent = fmt(ind.sar);
+
+        // Account data from EA (real-time via WebSocket)
+        const acct = d.account || {};
+        if (acct.balance != null) {
+            document.getElementById('acct-balance').textContent = '$' + parseFloat(acct.balance).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+        }
+        if (acct.equity != null) {
+            document.getElementById('port-equity').textContent = '$' + parseFloat(acct.equity).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+        }
+        if (acct.floating_profit != null) {
+            const fp = parseFloat(acct.floating_profit);
+            const plEl = document.getElementById('port-pl');
+            plEl.textContent = (fp >= 0 ? '+' : '') + '$' + Math.abs(fp).toFixed(2);
+            plEl.className = `text-xs mono font-semibold ${fp >= 0 ? 'text-green-400' : 'text-red-400'}`;
+        }
+        if (acct.free_margin != null) {
+            document.getElementById('acct-free-margin').textContent = '$' + parseFloat(acct.free_margin).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+        }
+        if (acct.margin_level != null) {
+            const ml = parseFloat(acct.margin_level);
+            const mlEl = document.getElementById('acct-margin-level');
+            mlEl.textContent = ml > 0 ? ml.toFixed(1) + '%' : '∞';
+            mlEl.className = `text-xs mono font-semibold ${ml > 0 && ml < 200 ? 'text-red-400' : ml < 500 ? 'text-yellow-400' : ''}`;
+        }
+        if (acct.open_positions != null) {
+            const buys = acct.buy_positions || 0;
+            const sells = acct.sell_positions || 0;
+            document.getElementById('acct-positions').textContent = `${acct.open_positions} (${buys}B/${sells}S)`;
+        }
+    }
+
+    function updateStreamTabs() {
+        const container = document.getElementById('stream-tabs');
+        const tradeSel = document.getElementById('trade-symbol');
+        const streamIds = Object.keys(streams);
+
+        container.innerHTML = streamIds.map(id => {
+            const s = streams[id];
+            const active = id === activeStreamId;
+            return `<button data-stream-id="${id.replace(/"/g, '&quot;')}" class="stream-tab px-3 py-1 rounded text-[10px] mono whitespace-nowrap transition-colors ${active ? 'bg-blue-600 text-white' : 'text-neutral-500 hover:text-white hover:bg-[#1a1a1a]'}">${s.symbol} ${s.timeframe.replace('PERIOD_', '')}</button>`;
+        }).join('');
+
+        document.getElementById('stream-count').textContent = streamIds.length;
+
+        const symbols = [...new Set(streamIds.map(id => streams[id].symbol))];
+        const currentTradeSym = tradeSel.value;
+        tradeSel.innerHTML = symbols.map(s => `<option value="${s}" ${s === currentTradeSym ? 'selected' : ''}>${s}</option>`).join('');
+    }
+
+    async function fetchModels() {
+        try {
+            const res = await fetch(`${API}/api/models`);
+            const data = await res.json();
+            const sel = document.getElementById('model-select');
+            if (data.models && data.models.length > 0) {
+                sel.innerHTML = data.models.map(m =>
+                    `<option value="${m}" ${m === data.selected ? 'selected' : ''}>${m}</option>`
+                ).join('');
+            } else {
+                sel.innerHTML = '<option>No models found</option>';
+            }
+        } catch (e) { console.warn('fetchModels failed:', e); }
+    }
+
+    async function updateHealth() {
+        try {
+            const res = await fetch(`${API}/api/system/health`);
+            const h = await res.json();
+            document.getElementById('ollama-pulse').className = h.ollama_connected ? 'w-1.5 h-1.5 rounded-full bg-green-500' : 'w-1.5 h-1.5 rounded-full bg-red-500';
+            if (h.active_model) {
+                document.getElementById('model-select').value = h.active_model;
+            }
+        } catch (e) { console.warn('updateHealth failed:', e); }
+    }
+
+    function renderMTFHeatmap(mtf) {
+        if (!mtf || Object.keys(mtf).length === 0) return;
+        const container = document.getElementById('mtf-heatmap');
+        const tfs = ['M1', 'M5', 'M15', 'M30', 'H1', 'H4', 'D1', 'W1'];
+        container.innerHTML = tfs.map(tf => {
+            const data = mtf[tf];
+            if (!data) return `<div class="flex items-center justify-between text-[10px]"><span class="text-neutral-600">${tf}</span><span class="text-neutral-700">No data</span></div>`;
+            const trend = data.trend || 'neutral';
+            const color = trend === 'bullish' ? 'text-green-400' : trend === 'bearish' ? 'text-red-400' : 'text-neutral-400';
+            const bg = trend === 'bullish' ? 'bg-green-500/10' : trend === 'bearish' ? 'bg-red-500/10' : 'bg-neutral-800';
+            const change = data.change_pct || 0;
+            const changeColor = change >= 0 ? 'text-green-400' : 'text-red-400';
+            return `<div class="flex items-center justify-between text-[10px] p-1.5 rounded ${bg}">
+                <span class="mono font-medium">${tf}</span>
+                <span class="mono">${data.close ? parseFloat(data.close).toFixed(5) : '--'}</span>
+                <span class="mono ${changeColor}">${change >= 0 ? '+' : ''}${change.toFixed(3)}%</span>
+                <span class="mono ${color}">${trend.toUpperCase()}</span>
+            </div>`;
+        }).join('');
+
+        // MTF Detail table
+        const tbody = document.getElementById('mtf-detail-body');
+        if (tbody) {
+            tbody.innerHTML = tfs.map(tf => {
+                const data = mtf[tf];
+                if (!data) return '';
+                const trend = data.trend || 'neutral';
+                const color = trend === 'bullish' ? 'text-green-400' : trend === 'bearish' ? 'text-red-400' : 'text-neutral-400';
+                return `<tr>
+                    <td class="py-1 font-medium">${tf}</td>
+                    <td>${data.close ? parseFloat(data.close).toFixed(5) : '--'}</td>
+                    <td class="${(data.change_pct || 0) >= 0 ? 'text-green-400' : 'text-red-400'}">${(data.change_pct || 0) >= 0 ? '+' : ''}${(data.change_pct || 0).toFixed(3)}%</td>
+                    <td>${data.rsi ? parseFloat(data.rsi).toFixed(1) : '--'}</td>
+                    <td>${data.sma_20 ? parseFloat(data.sma_20).toFixed(5) : '--'}</td>
+                    <td>${data.atr ? parseFloat(data.atr).toFixed(5) : '--'}</td>
+                    <td>${data.macd ? parseFloat(data.macd).toFixed(5) : '--'}</td>
+                    <td class="${color}">${trend.toUpperCase()}</td>
+                </tr>`;
+            }).join('');
+        }
+    }
+
+    function renderCorrelation(corr) {
+        if (!corr || Object.keys(corr).length === 0) return;
+        const container = document.getElementById('correlation-matrix');
+        container.innerHTML = Object.entries(corr).map(([sym, data]) => {
+            const change = data.change_pct || 0;
+            const color = change >= 0 ? 'text-green-400' : 'text-red-400';
+            return `<div class="flex items-center justify-between text-[10px] p-1.5 rounded bg-neutral-800/50">
+                <span class="mono font-medium">${sym}</span>
+                <span class="mono">${data.bid ? parseFloat(data.bid).toFixed(sym.includes('JPY') ? 3 : 5) : '--'}</span>
+                <span class="mono ${color}">${change >= 0 ? '+' : ''}${change.toFixed(3)}%</span>
+            </div>`;
+        }).join('');
+    }
+
+    function renderPatterns(patterns) {
+        if (!patterns || patterns.length === 0) {
+            document.getElementById('pattern-display').innerHTML = '<p class="text-[10px] text-neutral-700">No patterns detected</p>';
+            return;
+        }
+        document.getElementById('pattern-display').innerHTML = patterns.map(p => {
+            const name = (p.pattern || '').replace(/_/g, ' ');
+            return `<div class="p-1.5 rounded bg-neutral-800/50 text-[10px]">
+                <div class="flex items-center justify-between">
+                    <span class="mono text-neutral-400">${name}</span>
+                    <span class="text-blue-400">${p.reliability || 0}%</span>
+                </div>
+            </div>`;
+        }).join('');
+    }
+
+    function renderCalendar(events) {
+        if (!events || events.length === 0) {
+            document.getElementById('calendar-display').innerHTML = '<p class="text-[10px] text-neutral-700">No upcoming events</p>';
+            return;
+        }
+        document.getElementById('calendar-display').innerHTML = events.slice(0, 5).map(e => {
+            const importance = e.importance || 0;
+            const impColor = importance >= 3 ? 'text-red-400' : importance >= 2 ? 'text-yellow-400' : 'text-neutral-400';
+            const time = e.time ? new Date(e.time * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--';
+            return `<div class="flex items-center justify-between text-[10px] p-1.5 rounded bg-neutral-800/50">
+                <span class="mono text-neutral-400">${time}</span>
+                <span class="mono truncate max-w-[120px]">${e.name || 'Event'}</span>
+                <span class="${impColor}">${'★'.repeat(Math.min(importance, 3))}</span>
+            </div>`;
+        }).join('');
+    }
+
+    function renderVolumeProfile(vp) {
+        if (!vp || Object.keys(vp).length === 0) return;
+        document.getElementById('vp-poc').textContent = vp.poc ? parseFloat(vp.poc).toFixed(5) : '--';
+        document.getElementById('vp-vah').textContent = vp.value_area_high ? parseFloat(vp.value_area_high).toFixed(5) : '--';
+        document.getElementById('vp-val').textContent = vp.value_area_low ? parseFloat(vp.value_area_low).toFixed(5) : '--';
+        
+        const container = document.getElementById('volume-profile-chart');
+        if (vp.levels && vp.levels.length > 0) {
+            const vols = vp.levels.map(l => l.volume || 0);
+            const maxVol = vols.length > 0 ? Math.max(...vols) : 0;
+            container.innerHTML = vp.levels.map(l => {
+                const width = maxVol > 0 ? ((l.volume || 0) / maxVol * 100) : 0;
+                return `<div class="flex items-center gap-2 text-[9px] mono">
+                    <span class="w-16 text-right text-neutral-500">${parseFloat(l.price).toFixed(5)}</span>
+                    <div class="flex-1 h-2 bg-neutral-800 rounded overflow-hidden">
+                        <div class="h-full bg-blue-500/50 rounded" style="width: ${width}%"></div>
+                    </div>
+                    <span class="w-12 text-neutral-600">${l.volume || 0}</span>
+                </div>`;
+            }).join('');
+        }
+    }
+
+    function renderStructure(struct) {
+        if (!struct || Object.keys(struct).length === 0) return;
+        
+        // Trend and regime
+        const trendEl = document.getElementById('regime-trend');
+        if (struct.trend) {
+            const trend = struct.trend;
+            trendEl.textContent = trend.toUpperCase();
+            trendEl.className = `text-[10px] mono font-medium ${trend === 'uptrend' ? 'text-green-400' : trend === 'downtrend' ? 'text-red-400' : 'text-neutral-400'}`;
+        }
+        if (struct.volatility_regime) {
+            const vol = struct.volatility_regime;
+            const volEl = document.getElementById('regime-vol');
+            volEl.textContent = vol.replace('_', ' ').toUpperCase();
+            volEl.className = `text-[10px] mono font-medium ${vol === 'high_volatility' ? 'text-red-400' : vol === 'low_volatility' ? 'text-yellow-400' : 'text-neutral-400'}`;
+        }
+
+        // Support/Resistance
+        if (Array.isArray(struct.resistance_levels)) {
+            document.getElementById('resistance-levels').innerHTML = struct.resistance_levels.map((l, i) => 
+                `<div class="flex items-center justify-between text-[10px] p-1 rounded bg-red-500/5"><span class="text-neutral-500">R${i + 1}</span><span class="mono text-red-400">${(parseFloat(l) || 0).toFixed(5)}</span></div>`
+            ).join('');
+        }
+        if (Array.isArray(struct.support_levels)) {
+            document.getElementById('support-levels').innerHTML = struct.support_levels.map((l, i) => 
+                `<div class="flex items-center justify-between text-[10px] p-1 rounded bg-green-500/5"><span class="text-neutral-500">S${i + 1}</span><span class="mono text-green-400">${(parseFloat(l) || 0).toFixed(5)}</span></div>`
+            ).join('');
+        }
+
+        // Fibonacci
+        if (struct.fibonacci) {
+            document.getElementById('fib-levels').innerHTML = Object.entries(struct.fibonacci).map(([key, val]) => 
+                `<div class="flex justify-between"><span class="text-neutral-600">${key}</span><span class="text-neutral-400">${(parseFloat(val) || 0).toFixed(5)}</span></div>`
+            ).join('');
+        }
+
+        // Pivots
+        if (struct.pivots) {
+            document.getElementById('pivot-levels').innerHTML = Object.entries(struct.pivots).map(([key, val]) => 
+                `<div class="flex justify-between"><span class="text-neutral-600">${key.toUpperCase()}</span><span class="mono text-neutral-400">${(parseFloat(val) || 0).toFixed(5)}</span></div>`
+            ).join('');
+        }
+    }
+
+    function renderAdvancedMetrics(metrics) {
+        if (!metrics || Object.keys(metrics).length === 0) return;
+        document.getElementById('adv-ann-vol').textContent = metrics.annualized_volatility ? metrics.annualized_volatility + '%' : '--';
+        document.getElementById('adv-daily-vol').textContent = metrics.daily_volatility ? metrics.daily_volatility + '%' : '--';
+        document.getElementById('adv-atr-ratio').textContent = metrics.atr_ratio || '--';
+        document.getElementById('adv-rsi-div').textContent = metrics.rsi_divergence || '--';
+        document.getElementById('adv-vol-trend').textContent = metrics.volume_trend || '--';
+        document.getElementById('adv-vol-ratio').textContent = metrics.volume_ratio || '--';
+
+        const volTrendEl = document.getElementById('regime-vol-trend');
+        if (metrics.volume_trend) {
+            const vt = metrics.volume_trend;
+            volTrendEl.textContent = vt.toUpperCase();
+            volTrendEl.className = `text-[10px] mono font-medium ${vt === 'increasing' ? 'text-green-400' : vt === 'decreasing' ? 'text-red-400' : 'text-neutral-400'}`;
+        }
+    }
+
+    function renderSymbolInfo(info) {
+        if (!info || Object.keys(info).length === 0) return;
+        if (info.digits != null) _pricePrecision = parseInt(info.digits) || 5;
+        document.getElementById('sym-digits').textContent = info.digits || '--';
+        document.getElementById('sym-point').textContent = info.point || '--';
+        document.getElementById('sym-contract').textContent = info.contract_size || '--';
+        document.getElementById('sym-tick-val').textContent = info.tick_value || '--';
+        document.getElementById('sym-min-lot').textContent = info.volume_min || '--';
+        document.getElementById('sym-max-lot').textContent = info.volume_max || '--';
+        document.getElementById('sym-swap-long').textContent = info.swap_long || '--';
+        document.getElementById('sym-swap-short').textContent = info.swap_short || '--';
+    }
+
+    function renderSession(session) {
+        if (!session || Object.keys(session).length === 0) return;
+        const badge = document.getElementById('session-badge');
+        badge.textContent = (session.current || '---').toUpperCase();
+        badge.className = `text-[10px] mono px-1.5 py-0.5 rounded ${session.current === 'london' || session.current === 'new_york' ? 'bg-green-500/20 text-green-400' : 'bg-neutral-800 text-neutral-400'}`;
+    }
+
+    function renderAnalysis(data) {
+        const chat = document.getElementById('analysis-chat');
+        const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+        let html = `<div class="p-2 rounded border border-neutral-800">
+            <div class="flex justify-between items-center mb-1">
+                <span class="text-[10px] text-blue-400 font-medium">Analysis</span>
+                <span class="text-[10px] mono text-neutral-600">${time}</span>
+            </div>
+            <p class="text-xs text-neutral-300 mb-1">${data.rationale || data.analysis || 'Analysis complete.'}</p>`;
+
+        if (data.agent_reports) {
+            html += `<div class="space-y-0.5 pt-1 border-t border-neutral-800">` +
+                data.agent_reports.map(a => `
+                    <div class="flex items-center justify-between text-[10px] mono">
+                        <span class="text-neutral-500 uppercase">${a.agent}</span>
+                        <span class="${(a.bias||'').includes('BUY') || (a.bias||'').includes('BULL') ? 'text-green-400' : (a.bias||'').includes('SELL') || (a.bias||'').includes('BEAR') ? 'text-red-400' : 'text-neutral-400'}">${a.bias||'N/A'} [${a.confidence||0}%]</span>
+                    </div>`).join('') + `</div>`;
+        }
+        html += `</div>`;
+        chat.innerHTML = html + chat.innerHTML;
+        while (chat.childElementCount > 50) chat.removeChild(chat.lastElementChild);
+
+        document.getElementById('ai-output').innerHTML = marked.parse(data.rationale || data.analysis || '');
+
+        if (data.agent_reports && data.agent_reports.length > 0) {
+            document.getElementById('agent-votes').innerHTML = data.agent_reports.map(a => {
+                const ab = a.bias || '';
+                const isBullish = ab.includes('BUY') || ab.includes('BULL');
+                const isBearish = ab.includes('SELL') || ab.includes('BEAR');
+                const color = isBullish ? 'text-green-400' : isBearish ? 'text-red-400' : 'text-neutral-400';
+                return `<div class="p-2 rounded border border-neutral-800">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-[10px] text-neutral-500 uppercase">${a.agent}</p>
+                            <p class="text-xs text-neutral-300 mt-0.5">${(a.reasoning || a.rationale || '').substring(0, 100)}...</p>
+                        </div>
+                        <div class="text-right">
+                            <span class="text-[10px] font-medium ${color}">${a.bias}</span>
+                            <div class="w-12 h-1 bg-neutral-800 rounded mt-0.5 overflow-hidden">
+                                <div class="h-full bg-blue-500" style="width: ${a.confidence}%"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        if (data.entry_zone || data.stop_loss || data.take_profit) {
+            updateChartLevels(
+                data.entry_zone ? parseFloat(data.entry_zone.low ?? 0) : 0,
+                data.entry_zone ? parseFloat(data.entry_zone.high ?? 0) : 0,
+                data.stop_loss ? parseFloat(data.stop_loss) : 0,
+                data.take_profit ? parseFloat(data.take_profit) : 0
+            );
+        }
+    }
+
+    async function loadOpenTrades() {
+        try {
+            const res = await fetch(`${API}/api/trades/open`);
+            const trades = await res.json();
+            const el = document.getElementById('open-trades-list');
+            const mini = document.getElementById('open-trades-mini');
+
+            if (!Array.isArray(trades) || !trades.length) {
+                el.innerHTML = '<p class="text-[10px] text-neutral-700">No open positions</p>';
+                mini.innerHTML = '<p class="text-[10px] text-neutral-700">No positions</p>';
+            } else {
+                el.innerHTML = trades.map(t => `
+                    <div class="flex items-center justify-between p-2 rounded border border-neutral-800">
+                        <div class="flex items-center gap-2">
+                            <span class="text-[10px] px-1.5 py-0.5 rounded ${t.direction === 'LONG' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}">${t.direction}</span>
+                            <span class="text-xs mono font-medium">${t.symbol}</span>
+                            <span class="text-[10px] mono text-neutral-500">${(t.entry_price || 0).toFixed(5)}</span>
+                            <span class="text-[10px] mono text-neutral-500">${(t.quantity || 0).toFixed(2)} lots</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs mono font-medium ${(t.unrealized_pl || 0) >= 0 ? 'text-green-400' : 'text-red-400'}">${(t.unrealized_pl || 0) >= 0 ? '+' : ''}$${(t.unrealized_pl || 0).toFixed(2)}</span>
+                            <button class="text-[10px] text-red-400 hover:text-red-300 px-1.5 py-0.5 rounded border border-red-500/20 hover:border-red-500/40 transition-colors close-trade-btn" data-trade-id="${t.id}" data-trade-stream="${String(t.stream_id).replace(/"/g, '&quot;')}" data-trade-dir="${t.direction}">Close</button>
+                        </div>
+                    </div>
+                `).join('');
+                mini.innerHTML = trades.slice(0, 3).map(t => `
+                    <div class="flex justify-between text-[10px] mono">
+                        <span class="${t.direction === 'LONG' ? 'text-green-400' : 'text-red-400'}">${t.symbol}</span>
+                        <span>${(t.quantity || 0).toFixed(2)} lots</span>
+                    </div>
+                `).join('');
+            }
+        } catch (e) { console.warn('loadOpenTrades:', e); }
+    }
+
+    async function loadTradeHistory() {
+        try {
+            const res = await fetch(`${API}/api/trades/history?limit=50`);
+            const trades = await res.json();
+            const tbody = document.getElementById('trade-history-body');
+            if (!Array.isArray(trades) || !trades.length) {
+                tbody.innerHTML = '<tr><td colspan="5" class="py-2 text-center text-[10px] text-neutral-700">No trade history</td></tr>';
+                return;
+            }
+            tbody.innerHTML = trades.map(t => {
+                const pl = parseFloat(t.profit || 0);
+                const exitTime = t.exit_time ? new Date(t.exit_time).toLocaleString([], { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '--';
+                return `<tr>
+                    <td class="py-1 text-neutral-500">${exitTime}</td>
+                    <td class="py-1">${t.symbol}</td>
+                    <td class="py-1 ${t.direction === 'LONG' ? 'text-green-400' : 'text-red-400'}">${t.direction}</td>
+                    <td class="py-1 text-neutral-500">${t.strategy || 'manual'}</td>
+                    <td class="py-1 text-right font-medium ${pl >= 0 ? 'text-green-400' : 'text-red-400'}">${pl >= 0 ? '+' : ''}$${Math.abs(pl).toFixed(2)}</td>
+                </tr>`;
+            }).join('');
+        } catch (e) { console.warn('loadTradeHistory:', e); }
+    }
+
+    async function loadPortfolio() {
+        try {
+            const res = await fetch(`${API}/api/portfolio`);
+            const p = await res.json();
+            // Only update win_rate from REST; equity/P/L come in real-time from EA via WebSocket
+            document.getElementById('port-winrate').textContent = (p.win_rate || 0).toFixed(1) + '%';
+            // Fallback: if no live EA data yet, show REST data
+            if (!activeStreamId || !streams[activeStreamId] || !streams[activeStreamId].account) {
+                const equity = p.total_equity || p.balance || 0;
+                document.getElementById('port-equity').textContent = '$' + equity.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                const pl = p.floating_profit != null ? p.floating_profit : (p.total_profit || 0);
+                const plEl = document.getElementById('port-pl');
+                plEl.textContent = (pl >= 0 ? '+' : '') + '$' + Math.abs(pl).toLocaleString(undefined, { minimumFractionDigits: 2 });
+                plEl.className = `text-xs mono font-semibold ${pl >= 0 ? 'text-green-400' : 'text-red-400'}`;
+            }
+        } catch (e) { console.warn('loadPortfolio:', e); }
+    }
+
+    async function closeTrade(id, streamId, direction) {
+        const sd = streams[streamId];
+        if (!sd) return showToast('Stream data not found', 'error');
+        const exitPrice = direction === 'LONG' ? sd.bid : sd.ask;
+        try {
+            const res = await fetch(`${API}/api/trade/close`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ trade_id: id, exit_price: exitPrice })
+            });
+            const data = await res.json();
+            if (data.error) {
+                showToast(data.error, 'error');
+            } else {
+                showToast(`Trade closed. P/L: $${(data.profit || 0).toFixed(2)}`, 'success');
+            }
+            syncAll();
+        } catch (e) { showToast('Failed to close trade', 'error'); }
+    }
+
+    function syncAll() {
+        loadOpenTrades();
+        loadTradeHistory();
+        loadPortfolio();
+        updateHealth();
+    }
+
+    document.getElementById('model-select').onchange = async (e) => {
+        const model = e.target.value;
+        try {
+            const res = await fetch(`${API}/api/select_model`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ model })
+            });
+            if (!res.ok) { const err = await res.json(); showToast(err.detail || 'Switch failed', 'error'); return; }
+            showToast(`Model switched to ${model}`, 'success');
+        } catch (e) { showToast('Failed to switch model', 'error'); }
+    };
+
+    document.getElementById('analyze-btn').onclick = async () => {
+        if (!activeStreamId) return showToast('No active stream. Connect MT5 first.', 'error');
+        const btn = document.getElementById('analyze-btn');
+        btn.textContent = 'Analyzing...';
+        btn.disabled = true;
+        try {
+            const res = await fetch(`${API}/api/analyze`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ stream_id: activeStreamId, use_multi_agent: true })
+            });
+            const data = await res.json();
+            if (data.rationale || data.analysis || data.agent_reports) {
+                renderAnalysis(data);
+                showToast('Analysis complete', 'success');
+            } else {
+                showToast(data.detail || data.message || 'Analysis failed', 'error');
+            }
+        } catch (e) {
+            showToast('Analysis request failed', 'error');
+        } finally {
+            btn.textContent = 'Run Analysis';
+            btn.disabled = false;
+        }
+    };
+
+    let autoPilot = true;
+    async function loadSettings() {
+        try {
+            const res = await fetch(`${API}/api/settings`);
+            const s = await res.json();
+            autoPilot = s.is_auto_trade_enabled;
+            updateToggleUI();
+        } catch (e) { console.warn('loadSettings failed:', e); }
+    }
+    function updateToggleUI() {
+        const btn = document.getElementById('master-trade-toggle');
+        const dot = btn.querySelector('span');
+        if (autoPilot) {
+            btn.className = 'w-8 h-4 rounded-full bg-green-600 relative transition-colors';
+            dot.style.left = 'calc(100% - 14px)';
+        } else {
+            btn.className = 'w-8 h-4 rounded-full bg-neutral-700 relative transition-colors';
+            dot.style.left = '2px';
+        }
+    }
+    document.getElementById('master-trade-toggle').onclick = async function () {
+        autoPilot = !autoPilot;
+        updateToggleUI();
+        try {
+            await fetch(`${API}/api/settings`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ is_auto_trade_enabled: autoPilot })
+            });
+            showToast(`Auto-trade ${autoPilot ? 'enabled' : 'disabled'}`, 'info');
+        } catch (e) { console.warn('toggle auto-trade failed:', e); showToast('Failed to toggle auto-trade', 'error'); }
+    };
+
+    document.getElementById('btn-open-trade').onclick = async () => {
+        const sym = document.getElementById('trade-symbol').value;
+        const dir = document.getElementById('trade-direction').value;
+        const qty = document.getElementById('trade-qty').value;
+        const slInput = document.getElementById('trade-sl').value;
+        const tpInput = document.getElementById('trade-tp').value;
+
+        let streamId = Object.keys(streams).find(id => streams[id].symbol === sym);
+        if (!streamId) return showToast('Symbol stream not found', 'error');
+
+        const entryPrice = dir === 'LONG' ? streams[streamId].ask : streams[streamId].bid;
+        const payload = {
+            symbol: sym, direction: dir, quantity: parseFloat(qty),
+            entry_price: entryPrice, stream_id: streamId,
+            stop_loss: slInput ? parseFloat(slInput) : 0.0,
+            take_profit: tpInput ? parseFloat(tpInput) : 0.0
+        };
+
+        try {
+            const res = await fetch(`${API}/api/trade/open`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (data.status === 'success') {
+                showToast(`Order executed: ${dir} ${qty} ${sym}`, 'success');
+                document.getElementById('trade-sl').value = '';
+                document.getElementById('trade-tp').value = '';
+                syncAll();
+            } else {
+                showToast(data.detail || data.message || 'Order failed', 'error');
+            }
+        } catch (e) { showToast('Order request failed', 'error'); }
+    };
+
+    window.addEventListener('resize', () => {
+        if (chart) chart.resize(document.getElementById('chart-container').clientWidth, document.getElementById('chart-container').clientHeight);
+    });
+
+    document.getElementById('stream-tabs').addEventListener('click', e => {
+        const btn = e.target.closest('.stream-tab');
+        if (btn) switchStream(btn.dataset.streamId);
+    });
+
+    document.getElementById('open-trades-list').addEventListener('click', e => {
+        const btn = e.target.closest('.close-trade-btn');
+        if (btn) closeTrade(btn.dataset.tradeId, btn.dataset.tradeStream, btn.dataset.tradeDir);
+    });
+
+    initChart();
+    connectWS();
+    fetchModels();
+    loadSettings();
+    syncAll();
+    setInterval(syncAll, 5000);
+</script>
+</body>
+</html>
