@@ -98,3 +98,6 @@ graph TD
 
 ## 📜 License
 This project is licensed under the MIT License - see the LICENSE file for details.
+
+## 🤝 Contributing
+Feel free to contribute to this project! Open an issue or submit a pull request.
